@@ -2,8 +2,6 @@ import numpy as np
 from scipy.spatial import distance_matrix
 
 '''
-Update: 
-    - 10/05/2020 new version beta
 Author: Long Chen
 Support:
     - higher dimensional data
@@ -18,108 +16,24 @@ Support:
         - SBD (symmetric best Dice)
 '''
 
-def map2stack(map):
-    map = np.squeeze(map)
-    labels = np.unique(map)
-    if map.ndim == 2 and len(labels) > 1:
-        stack = []
-        for l in labels:
-            if l == 0:
-                continue
-            stack.append(map==l)
-        return np.array(stack)>0
-    else:
+def map2stack(M, bg_label=0):
+    '''
+    Args:
+        M: H x W x (1)
+        bg_label: label of the background
+    Return:
+        S: C x H x W
+    '''
+    M = np.squeeze(M)
+    labels = np.unique(M[M!=bg_label]) if bg_label is not None else np.unique(M)
+    if M.ndim != 2 or len(labels) == 0:
         return None
-
-class Evaluator(object):
-
-    def __init__(self, dimension=2, mode='area', boundary_tolerance=3):
-
-        self.dimension = dimension
-        self.mode = mode
-        self.boundary_tolerance = boundary_tolerance
-
-        # self.thres = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] if thres is None else thres
-        # self.thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
-
-        self.examples = []
-        self.total_pd = 0
-        self.total_gt = 0
-        
-
-    def add_example(self, pred, gt):
-        e = Sample(pred, gt, dimension=self.dimension, mode=self.mode, boundary_tolerance=self.boundary_tolerance)
-        self.examples.append(e)
-
-        self.total_pd += e.num_pd
-        self.total_gt += e.num_gt
-        print("example added, total: ", len(self.examples))
-
-    def mAP(self, thres=None, metric='Jaccard'):
-
-        '''
-        Reference about mAP:
-            https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
-        '''
-        
-        # thres = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] if thres is None else thres
-        thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] if thres is None else thres
-        # thres = [0.3] if thres is None else thres
-
-        APs, precision, recall = [], [], []
-        for t in thres:
-            match_pd = 0
-            match_gt = 0
-            for e in self.examples:
-                m_p, m_g = e.match_num(t, metric=metric)
-                match_pd += m_p
-                match_gt += m_g
-            precision.append(match_pd/self.total_pd)
-            recall.append(match_gt/self.total_gt)
-            APs.append(match_pd/(self.total_pd+self.total_gt-match_gt))
-
-        for t, p, r, ap in zip(thres, precision, recall, APs):
-            print(metric+'_'+str(t)+': ', 'precision ' + str(p) + ', ', 'recall ' + str(r) + ', ', 'AP ' + str(ap) )
-        print('meanPrecision', np.mean(precision), 'meanRecall', np.mean(recall), 'mAP', np.mean(APs))
-        
-        return np.mean(APs)
-    
-    def aggregatedJaccard(self):
-        '''  
-        Reference:
-            A Dataset and a Technique for Generalized Nuclear Segmentation for Computational Pathology
-        '''
-        
-        agg_intersection, agg_union = 0, 0
-        for e in self.examples:
-            agg_i, agg_u, _ = e.get_acc_area()
-            agg_intersection += agg_i
-            agg_union += agg_u
-        
-        print('aggrated Jaccard: ', agg_intersection/agg_union)
-
-        return agg_intersection/agg_union
-
-    def aggregatedDice(self):
-
-        ''' 
-        no defination found, derived from aggrated Jaccard Index
-        Reference:
-            CNN-BASED PREPROCESSING TO OPTIMIZE WATERSHED-BASED CELL SEGMENTATION IN 3D CONFOCAL MICROSCOPY IMAGES
-        '''
-        
-        agg_intersection, agg_area = 0, 0
-        for e in self.examples:
-            agg_i, _, agg_a = e.get_acc_area()
-            agg_intersection += agg_i
-            agg_area += agg_a
-        
-        print('aggrated Dice: ', 2*agg_intersection/agg_area)
-
-        return 2*agg_intersection/agg_area
-        
-        
-
+    S = np.ones((len(labels), M.shape[0], M.shape[1]), np.bool)
+    for idx, l in enumerate(labels):
+        if l == 0:
+            continue
+        S[idx] = (M==l)
+    return S
 
 class Sample(object):
 
@@ -135,9 +49,11 @@ class Sample(object):
             gt: numpy array of dimension D or D+1
             dimension: dimension D of the image / ground truth
             mode: 'area' / 'line', evaluate area or boundary
-            boundary_tolerance: int, shift tolerance of boundary pixels
+            boundary_tolerance: int, shift tolerance of boundary pixels, only valid when mode='line'
         Note:
-            pd/gt can be presented by a label map of dimension D, or a binary map of demension (D+1) with each instance occupying one channel of the first dimension. 
+            pd/gt can be giveb by:
+                - a label map of dimension D, with 0 indicating the background
+                - a binary map of demension (D+1) with each instance occupying one channel of the first dimension
             The binary map costs more memory, but can handle overlapped object. If objects are not overlapped, use the label map to save memory and accelarate the computation.
         '''
 
@@ -146,49 +62,96 @@ class Sample(object):
         self.dimension = dimension
         self.mode = mode
         self.boundary_tolerance = boundary_tolerance
-        self.label_map = (pd.ndim == dimension)
-        if self.label_map:
+        self.is_label_map = (pd.ndim == dimension)
+
+        if self.is_label_map:
             self.gt, self.pd = gt.astype(np.uint16), pd.astype(np.uint16)
             self.area_gt = {l: c for l, c in zip(*np.unique(self.gt, return_counts=True)) if l != 0}
             self.area_pd = {l: c for l, c in zip(*np.unique(self.pd, return_counts=True)) if l != 0}
         else:
             self.gt, self.pd = gt > 0, pd > 0
-            area_gt = np.sum(self.gt, axis=tuple(range(1, 1+dimension)))
-            self.area_gt = {l: c for l, c in enumerate(area_gt) if c!=0}
-            area_pd = np.sum(self.pd, axis=tuple(range(1, 1+dimension)))
-            self.area_pd = {l: c for l, c in enumerate(area_pd) if c!=0}
+            self.area_gt = np.sum(self.gt, axis=tuple(range(1, 1+dimension)))
+            self.area_gt = {l: c for l, c in enumerate(self.area_gt) if c!=0}
+            self.area_pd = np.sum(self.pd, axis=tuple(range(1, 1+dimension)))
+            self.area_pd = {l: c for l, c in enumerate(self.area_pd) if c!=0}
         
-        self.label_gt = list(self.area_gt.keys())
-        self.label_pd = list(self.area_pd.keys())
-        self.num_gt = len(self.label_gt)
-        self.num_pd = len(self.label_pd)
+        self.label_gt, self.label_pd = list(self.area_gt.keys()), list(self.area_pd.keys())
+        self.num_gt, self.num_pd = len(self.label_gt), len(self.label_pd)
 
         # the max-overlap match is not symmetric, thus, store them separately
         self.match_pd = None  # (prediction label)-(matched gt label)
         self.intersection_pd = None # (prediction label)-(intersection area)
-        self.match_gt = None
-        self.intersection_gt = None # (prediction label)-(intersection area)
+        self.match_gt = None # (gt label)-(matched prediction label)
+        self.intersection_gt = None # (gt label)-(intersection area)
 
         # precision 
-        self.precision_pd = None
-        self.precision_gt = None
+        self.precision_pd, self.precision_gt = None, None
         # recall
-        self.recall_pd = None
-        self.recall_gt = None
+        self.recall_pd, self.recall_gt = None, None
         # F1 score
-        self.f1_pd = None
-        self.f1_gt = None
+        self.f1_pd, self.f1_gt = None, None
         # dice
-        self.dice_pd = None
-        self.dice_gt = None
+        self.dice_pd, self.dice_gt = None, None
         # jaccard
-        self.jaccard_pd = None
-        self.jaccard_gt = None
+        self.jaccard_pd, self.jaccard_gt = None, None
 
         # aggreated area
         self.agg_intersection = None
         self.agg_union = None
         self.agg_area = None
+        # match count, computed with respect to ground truth (which makes sense)
+        self.match_count_gt = {}
+        self.match_count_pd = {}
+    
+    def _computeMatch(self, subject='pred'):
+        '''
+        Args:
+            subject: 'pred' or 'gt'
+        '''
+        if subject == 'pred' and self.match_pd is None:
+            sub, ref, label_sub, label_ref = self.pd, self.gt, self.label_pd, self.label_gt
+        elif subject == 'gt' and self.match_gt is None:
+            sub, ref, label_sub, label_ref = self.gt, self.pd, self.label_gt, self.label_pd
+        else:
+            return None
+
+        match, intersection = {}, {}
+        for l_s in label_sub:
+            if self.mode == "area":
+                if self.is_label_map:
+                    overlap = ref[np.nonzero(sub == l_s)]
+                    overlap = overlap[np.nonzero(overlap)]
+                    if len(overlap) == 0:
+                        match[l_s], intersection[l_s] = None, 0
+                    else:
+                        values, counts = np.unique(overlap, return_counts=True)
+                        ind = np.argmax(counts)
+                        match[l_s], intersection[l_s] = values[ind], counts[ind]
+                else:
+                    overlap = np.sum(np.multiply(ref, np.expand_dims(sub[l_s], axis=0)), axis=tuple(range(1, 1+self.dimension)))
+                    ind = np.argsort(overlap, kind='mergesort')
+                    if overlap[ind[-1]] == 0:
+                        match[l_s], intersection[l_s] = None, 0
+                    else:
+                        match[l_s], intersection[l_s] = ind[-1], overlap[ind[-1]]
+            else:
+                overlap = []
+                pts_sub = np.transpose(np.array(np.nonzero(sub==l_s if self.is_label_map else sub[l_s])))
+                for l_r in label_ref:
+                    pts_ref = np.transpose(np.array(np.nonzero(ref==l_r if self.is_label_map else ref[l_r])))
+                    bpGraph = distance_matrix(pts_sub, pts_ref) < self.boundary_tolerance
+                    overlap.append(GFG(bpGraph).maxBPM())
+                
+                ind = np.argsort(np.array(overlap), kind='mergesort')
+                if overlap[ind[-1]] == 0:
+                    match[l], intersection[l] = None, 0
+                else:
+                    match[l], intersection[l] = label_ref[int(ind)], overlap[ind[-1]]
+
+        if subject == 'pred':
+            self.match_pd, self.intersection_pd = match, intersection
+        else:
+            self.match_gt, self.intersection_gt = match, intersection
     
 
     def _computePrecision(self, subject='pred'):
@@ -200,30 +163,6 @@ class Sample(object):
         if subject == 'gt' and self.precision_gt is None:    
             self._computeMatch('gt')
             self.precision_gt = {k: self.intersection_gt[k] / self.area_gt[k] for k in self.match_gt.keys()}
-        
-
-    def averagePrecision(self, subject='pred'):
-
-        self._computePrecision(subject)
-        if subject == 'pred':
-            return np.mean(list(self.precision_pd.values()))
-        else:
-            return np.mean(list(self.precision_gt.values()))
-
-
-    def aggregatedPrecision(self, subject='pred'):
-
-        self._computeMatch(subject)
-
-        if subject == 'pred':
-            intersect_agg = sum(list(self.intersection_pd.values()))
-            area_agg = sum(list(self.area_pd.values())) + 1e-8
-        else:
-            intersect_agg = sum(list(self.intersection_gt.values()))
-            area_agg = sum(list(self.area_gt.values())) + 1e-8
-        
-        return intersect_agg/area_agg
-    
 
     def _computeRecall(self, subject='pred'):
 
@@ -239,32 +178,6 @@ class Sample(object):
             for k, m in self.match_gt.items():
                 self.recall_gt[k] = self.intersection_gt[k] / self.area_pd[m] if m is not None else 0
 
-
-    def averageRecall(self, subject='pred'):
-        self._computeRecall(subject)
-        if subject == 'pred':
-            return np.mean(list(self.recall_pd.values()))
-        else:
-            return np.mean(list(self.recall_gt.values()))    
-
-
-    def aggregatedRecall(self, subject='pred'):
-
-        self._computeMatch(subject)
-
-        intersect_agg, area_agg = 0, 1e-8
-        if subject == 'pred':
-            for k, m in self.match_pd.items():
-                intersect_agg += self.intersection_pd[k]
-                area_agg = area_agg + self.area_gt[m] if m is not None else area_agg
-        else:
-            for k, m in self.match_gt.items():
-                intersect_agg += self.intersection_gt[k]
-                area_agg = area_agg + self.area_pd[m] if m is not None else area_agg
-            
-        return intersect_agg/area_agg
-    
-
     def _computeF1(self, subject='pred'):
 
         self._computePrecision(subject)
@@ -279,23 +192,7 @@ class Sample(object):
             self.f1_gt = {}
             for k, p in self.precision_gt.items():
                 self.f1_gt[k] = 2*(p*self.recall_gt[k])/(p + self.recall_gt[k] + 1e-8)
-
-
-    def averageF1(self, subject='pred'):
-
-        self._computeF1(subject)
-        if subject == 'pred':
-            return np.mean(list(self.f1_pd.values()))
-        else:
-            return np.mean(list(self.f1_gt.values()))
-
-
-    def aggregatedF1(self, subject='pred'):
-        p = self.aggregatedPrecision(subject)
-        r = self.aggregatedRecall(subject)
-        return 2*(p*r)/(p+r)
-
-
+    
     def _computeJaccard(self, subject='pred'):
         
         self._computeMatch(subject)
@@ -310,7 +207,6 @@ class Sample(object):
             return None
 
         jaccard = {}
-
         for k, m in match.items():
             union = area_sub[k] - intersection[k]
             if m is not None:
@@ -321,51 +217,6 @@ class Sample(object):
             self.jaccard_pd = jaccard
         else:
             self.jaccard_gt = jaccard
-
-
-    def averagedJaccard(self, subject='pred'):
-        '''
-        Compute the Jaccard Index for each instance and then take average, note that the result with respect to prediction / ground truth are different
-        Args:
-            subject: 'pred' or 'gt'
-        '''
-        self._computeJaccard(subject)
-        if subject == 'pred':
-            return np.mean(list(self.jaccard_pd.values()))
-        else:
-            return np.mean(list(self.jaccard_gt.values()))
-    
-    def get_acc_area(self):
-        if self.agg_intersection is None or self.agg_area is None or self.agg_union is None:
-            self.agg_intersection, self.agg_union, self.agg_area = 0, 0, 0
-            self._computeMatch('gt')
-            matched_pd = []
-            for k, m in self.match_gt.items():
-                self.agg_intersection += self.intersection_gt[k]
-                self.agg_union += (self.area_gt[k] - self.intersection_gt[k])
-                self.agg_area += self.area_gt[k]
-                if m is not None:
-                    self.agg_union += self.area_pd[m]
-                    self.agg_area += self.area_pd[m]
-                    matched_pd.append(m)
-            # it is possible that a prediction is matched by multiply gt objects
-            self.agg_union += np.sum(list(self.area_pd.values()))
-            self.agg_area += np.sum(list(self.area_pd.values()))
-            for l in np.unique(matched_pd):
-                self.agg_union -= self.area_pd[l]
-                self.agg_area -= self.area_pd[l]
-        return self.agg_intersection, self.agg_union, self.agg_area
-
-
-    def aggregatedJaccard(self):
-        '''  
-        Reference:
-            A Dataset and a Technique for Generalized Nuclear Segmentation for Computational Pathology
-        '''
-        agg_intersection, agg_union, _ = self.get_acc_area()
-
-        return agg_intersection/agg_union
-
 
     def _computeDice(self, subject='pred'):
 
@@ -380,7 +231,6 @@ class Sample(object):
             return None
 
         dice = {}
-
         for k, m in match.items():
             agg_area = area_sub[k] + area_ref[m] if m is not None else area_sub[k]
             dice[k] = 2 * intersection[k] / agg_area
@@ -389,20 +239,75 @@ class Sample(object):
             self.dice_pd = dice
         else:
             self.dice_gt = dice
+        
+    def averageSegPrecision(self, subject='pred'):
 
+        self._computePrecision(subject)
+        if subject == 'pred':
+            return np.mean(list(self.precision_pd.values()))
+        else:
+            return np.mean(list(self.precision_gt.values()))
 
-    def averagedDice(self, subject='pred'):
-        '''
-        Compute the Dice Coefficient for each instance and then take average, note that the result with respect to prediction / ground truth are different
-        Args:
-            subject: 'pred' or 'gt'
-        '''
+    def averageSegRecall(self, subject='pred'):
+        self._computeRecall(subject)
+        if subject == 'pred':
+            return np.mean(list(self.recall_pd.values()))
+        else:
+            return np.mean(list(self.recall_gt.values()))    
+
+    def averageSegF1(self, subject='pred'):
+
+        self._computeF1(subject)
+        if subject == 'pred':
+            return np.mean(list(self.f1_pd.values()))
+        else:
+            return np.mean(list(self.f1_gt.values()))
+
+    def averageJaccard(self, subject='pred'):
+    
+        self._computeJaccard(subject)
+        if subject == 'pred':
+            return np.mean(list(self.jaccard_pd.values()))
+        else:
+            return np.mean(list(self.jaccard_gt.values()))
+
+    def averageDice(self, subject='pred'):
+
         self._computeDice(subject)
         if subject == 'pred':
             return np.mean(list(self.dice_pd.values()))
         else:
             return np.mean(list(self.dice_gt.values()))
     
+    def accumulate_area(self):
+
+        if self.agg_intersection is None or self.agg_area is None or self.agg_union is None:
+            self.agg_intersection, self.agg_union, self.agg_area = 0, 0, 0
+            self._computeMatch('gt')
+            matched_pd = []
+            for k, m in self.match_gt.items():
+                self.agg_intersection += self.intersection_gt[k]
+                self.agg_union += (self.area_gt[k] - self.intersection_gt[k])
+                self.agg_area += self.area_gt[k]
+                if m is not None:
+                    self.agg_union += self.area_pd[m]
+                    self.agg_area += self.area_pd[m]
+                    matched_pd.append(m)
+            # add the area of not matched predictions
+            agg_ex = np.sum(list(self.area_pd.values()))
+            for l in np.unique(matched_pd):
+                agg_ex -= self.area_pd[l]
+            self.agg_union += agg_ex
+            self.agg_area += agg_ex
+        return self.agg_intersection, self.agg_union, self.agg_area
+
+    def aggregatedJaccard(self):
+        '''  
+        Reference:
+            A Dataset and a Technique for Generalized Nuclear Segmentation for Computational Pathology
+        '''
+        agg_intersection, agg_union, _ = self.accumulate_area()
+        return agg_intersection/agg_union
 
     def aggregatedDice(self):
         ''' 
@@ -410,86 +315,11 @@ class Sample(object):
         Reference:
             CNN-BASED PREPROCESSING TO OPTIMIZE WATERSHED-BASED CELL SEGMENTATION IN 3D CONFOCAL MICROSCOPY IMAGES
         '''
-        agg_intersection, _, agg_area = self.get_acc_area()
-
+        agg_intersection, _, agg_area = self.accumulate_area()
         return 2*agg_intersection/agg_area
-
 
     def SBD(self):
         return min(self.averagedDice('pred'), self.averagedDice('gt'))
-
-
-    def _computeMatch(self, subject):
-
-        '''
-        Args:
-            subject: 'pred' or 'gt'
-        '''
-
-        if subject == 'pred' and self.match_pd is None:
-            sub, ref, label_sub, label_ref = self.pd, self.gt, self.label_pd, self.label_gt
-        elif subject == 'gt' and self.match_gt is None:
-            sub, ref, label_sub, label_ref = self.gt, self.pd, self.label_gt, self.label_pd
-        else:
-            return None
-
-        match = {}
-        intersection = {}
-
-        for label_s in label_sub:
-
-            if self.mode == "area":
-                if self.label_map:
-                    overlap = ref[np.nonzero(sub == label_s)]
-                    overlap = overlap[np.nonzero(overlap)]
-                    if len(overlap) == 0:
-                        match[label_s] = None
-                        intersection[label_s] = 0
-                    else:
-                        values, counts = np.unique(overlap, return_counts=True)
-                        ind = np.argmax(counts)
-                        match[label_s] = values[ind]
-                        intersection[label_s] = counts[ind]
-                else:
-                    overlap = np.sum(np.multiply(ref, np.expand_dims(sub[label_s], axis=0)), axis=tuple(range(1, 1+self.dimension)))
-                    ind = np.argsort(overlap, kind='mergesort')
-                    if overlap[ind[-1]] == 0:
-                        match[label_s] = None
-                        intersection[label_s] = 0
-                    else:
-                        match[label_s] = ind[-1]
-                        intersection[label_s] = overlap[ind[-1]]
-            else:
-                overlap = []
-                if self.label_map:
-                    pts_sub = np.transpose(np.array(np.nonzero(sub==label_s)))
-                    for label_r in label_ref:
-                        pts_ref = np.transpose(np.array(np.nonzero(ref==label_r)))
-                        bpGraph = distance_matrix(pts_sub, pts_ref) < self.boundary_tolerance
-                        overlap.append(GFG(bpGraph).maxBPM())
-                else:
-                    pts_sub = np.transpose(np.array(np.nonzero(sub[label_s])))
-                    for label_r in label_ref:
-                        pts_ref = np.transpose(np.array(np.nonzero(ref[label_r])))
-                        bpGraph = distance_matrix(pts_sub, pts_ref) < self.boundary_tolerance
-                        overlap.append(GFG(bpGraph).maxBPM())
-                
-                overlap = np.array(overlap)
-                ind = np.argsort(overlap, kind='mergesort')
-                if overlap[ind[-1]] == 0:
-                    match[label_s] = None
-                    intersection[label_s] = 0
-                else:
-                    match[label_s] = label_ref[int(ind)]
-                    intersection[label_s] = overlap[ind[-1]]
-
-        if subject == 'pred':
-            self.match_pd = match
-            self.intersection_pd = intersection
-        else:
-            self.match_gt = match
-            self.intersection_gt = intersection
-
 
     def match_num(self, thres, metric='Jaccard'):
         '''
@@ -499,23 +329,40 @@ class Sample(object):
         Retrun:
             match_count, gt_count: the number of matches, the number of matched gt objects
         '''
-        match_count = 0
-        match_gt = []
-        if metric.lower() == 'f1':
-            self._computeF1()
-            score = self.f1_pd 
-        elif metric.lower() == 'jaccard':
-            self._computeJaccard('pred')
-            score = self.jaccard_pd
-        elif metric.lower() == 'dice':
-            self._computeDice('pred')
-            score = self.dice_pd
-        for k, s in score.items():
-            if s >= thres:
-                match_count += 1
-                if self.match_pd[k] is not None:
-                    match_gt.append(self.match_pd[k])
-        return match_count, len(np.unique(match_gt))
+        if thres not in self.match_count_gt.keys() or thres not in self.match_count_pd.keys():
+            match_count = 0
+            match_pd = []
+            if metric.lower() == 'f1':
+                self._computeF1('gt')
+                score = self.f1_gt 
+            elif metric.lower() == 'jaccard':
+                self._computeJaccard('gt')
+                score = self.jaccard_gt
+            elif metric.lower() == 'dice':
+                self._computeDice('gt')
+                score = self.dice_gt
+            for k, s in score.items():
+                if s >= thres:
+                    match_count += 1
+                    match_pd.append(self.match_gt[k])
+            self.match_count_gt[thres] = match_count
+            self.match_count_pd[thres] = len(np.unique(match_pd))
+
+        return self.match_count_gt[thres], self.match_count_pd[thres]
+
+    def detectionPrecision(self, thres=0.5, metric='Jaccard'):
+
+        match_count_gt, match_count_pd = self.match_num(thres=thres, metric=metric)
+        return match_count_gt/(self.num_gt + self.num_pd - match_count_pd)
+
+    def AP(self, thres=None, metric='Jaccard'):
+        '''
+        Reference about P, AP, mAP:
+            https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        '''
+        thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
+        Ps = [self.detectionPrecision(thres=t, metric=metric) for t in thres]
+        return np.mean(Ps)
 
 
 class GFG(object):   
@@ -561,6 +408,110 @@ class GFG(object):
             if self.bpm(i, matchR, seen): 
                 result += 1
         return result 
+
+class Evaluator(object):
+
+    def __init__(self, dimension=2, mode='area', boundary_tolerance=3):
+
+        self.dimension = dimension
+        self.mode = mode
+        self.boundary_tolerance = boundary_tolerance
+
+        self.examples = []
+        self.total_pd = 0
+        self.total_gt = 0
+        
+
+    def add_example(self, pred, gt):
+        e = Sample(pred, gt, dimension=self.dimension, mode=self.mode, boundary_tolerance=self.boundary_tolerance)
+        self.examples.append(e)
+        self.total_pd += e.num_pd
+        self.total_gt += e.num_gt
+        print("example added, total: ", len(self.examples))
+
+    def mAP(self, thres=None, metric='Jaccard'):
+
+        '''
+        mean AP over images
+        Reference about P, AP, mAP:
+            https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        '''
+        thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] if thres is None else thres
+        APs = [e.AP(thres=thres, metric=metric) for e in self.examples]
+        mAP = np.mean(APs)
+        print('mAP (mean average precision): ', mAP)
+        return mAP
+
+    def averagePrecision(self, thres=None, metric='Jaccard'):
+        '''
+        AP over the whole dataset
+        Reference about P, AP, mAP:
+            https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        '''
+
+        thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] if thres is None else thres
+        Ps = []
+        for t in thres:
+            match_count_gt = 0
+            match_count_pd = 0
+            for e in self.examples:
+                match_count_gt_, match_count_pd_ = e.match_num(thres=t, metric=metric)
+                match_count_gt += match_count_gt_
+                match_count_pd += match_count_pd_
+
+            Ps.append(match_count_gt/(self.total_gt + self.total_pd - match_count_pd))
+        AP = np.mean(Ps)
+        print('AP (average precision) over the whole dataset: ', AP)
+        return AP
+
+    def mAJ(self):
+        '''
+        mean aggregated Jaccard
+        '''
+        AJs = [e.aggregatedJaccard() for e in self.examples]
+        mAJ = np.mean(AJs)
+        print('mAJ (mean aggregated Jaccard): ', mAJ)
+        return mAJ    
+    
+    def aggregatedJaccard(self):
+        '''  
+        Reference:
+            A Dataset and a Technique for Generalized Nuclear Segmentation for Computational Pathology
+        '''
+        agg_intersection, agg_union = 0, 0
+        for e in self.examples:
+            agg_i, agg_u, _ = e.accumulate_area()
+            agg_intersection += agg_i
+            agg_union += agg_u
+        
+        print('aggregated Jaccard: ', agg_intersection/agg_union)
+
+        return agg_intersection/agg_union
+    
+    def mAD(self):
+        '''
+        mean aggregated Dice
+        '''
+        ADs = [e.aggregatedDice() for e in self.examples]
+        mAD = np.mean(ADs)
+        print('mAD (mean aggregated Dice): ', mAD)
+        return mAD 
+
+    def aggregatedDice(self):
+        ''' 
+        no defination found, derived from aggrated Jaccard Index
+        Reference:
+            CNN-BASED PREPROCESSING TO OPTIMIZE WATERSHED-BASED CELL SEGMENTATION IN 3D CONFOCAL MICROSCOPY IMAGES
+        '''
+        agg_intersection, agg_area = 0, 0
+        for e in self.examples:
+            agg_i, _, agg_a = e.accumulate_area()
+            agg_intersection += agg_i
+            agg_area += agg_a
+        
+        print('aggregated Dice: ', 2*agg_intersection/agg_area)
+
+        return 2*agg_intersection/agg_area
 
 
 if __name__ == '__main__':

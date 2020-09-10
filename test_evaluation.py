@@ -8,36 +8,37 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 
+#### toy test ####
+# gt = imread('./test/toy_example/gt.png')
+# pred = imread('./test/toy_example/pred.png')
+# sample = Sample(pred, gt)
+# subject = 'pred'
+# sample._computeMatch(subject=subject)
+# print(sample.match_pd, sample.intersection_pd, sample.match_gt, sample.intersection_gt)
+# sample._computePrecision(subject=subject)
+# sample._computeRecall(subject=subject)
+# sample._computeF1(subject=subject)
+# sample._computeJaccard(subject=subject)
+# sample._computeDice(subject=subject)
+# print('precision', sample.precision_pd, sample.precision_gt)
+# print('recall', sample.recall_pd, sample.recall_gt)
+# print('f1', sample.f1_pd, sample.f1_gt)
+# print('jaccard', sample.jaccard_pd, sample.jaccard_gt)
+# print('dice', sample.dice_pd, sample.dice_gt)
+# print('averagePrecision', sample.averageSegPrecision(subject))
+# print('averageRecall', sample.averageSegRecall(subject))
+# print('averageF1', sample.averageSegF1(subject))
+# print('averageJaccard', sample.averageJaccard(subject))
+# print('averageDice', sample.averageDice(subject))
+# print('aggregatedJaccard', sample.aggregatedJaccard())
+# print('aggregatedDice', sample.aggregatedDice())
+# print('detectionPrecision', sample.detectionPrecision())
+# print('AP', sample.AP())
+
+
+
 f_gts = sorted(glob.glob('./test/cell/gt/*.png'))[0:50]
 f_preds = sorted(glob.glob('./test/cell/pred/*.tif'))[0:50]
-
-# gt = imread('./test/cell/gt/mcf-z-stacks-03212011_i01_s1_w14fc74585-6706-47ea-b84b-ed638d101ae8.png')
-# pred = imread('./test/cell/pred/mcf-z-stacks-03212011_i01_s1_w14fc74585-6706-47ea-b84b-ed638d101ae8.tif')
-# vis = np.stack((gt, pred, pred*0), axis=-1)
-
-# plt.subplot(1,2,1)
-# plt.imshow(label2rgb(gt))
-# plt.subplot(1,2,2)
-# plt.imshow(label2rgb(pred))
-# plt.imshow(vis)
-# plt.show()
-
-## evalation of single image
-# s = Sample(pred, gt, dimension=2, mode='area')
-# print('averagePrecision', s.averagePrecision())
-# print('aggregatedPrecision', s.aggregatedPrecision())
-# print('averageRecall', s.averageRecall())
-# print('aggregatedRecall', s.aggregatedRecall())
-# print('averageF1', s.averageF1())
-# print('aggregatedF1', s.aggregatedF1())
-# print('aggregatedJaccard: ', s.aggregatedJaccard())
-# print('aggregatedDice: ', s.aggregatedDice())
-# print('averageJaccard_pred: ', s.averagedJaccard('pred'))
-# print('averageJaccard_gt: ', s.averagedJaccard('gt'))
-# print('averageDice_pred: ', s.averagedDice('pred'))
-# print('averageDice_gt: ', s.averagedDice('gt'))
-# print('SBD: ', s.SBD())
-# print('match number', s.match_num(0.5, 'Jaccard'))
 
 # evalation of a whole dataset
 e = Evaluator(dimension=2, mode='area')
@@ -48,6 +49,9 @@ for f_gt, f_pred in zip(f_gts, f_preds):
     e.add_example(pred, gt)
 
 e.mAP()
+e.averagePrecision()
+e.mAJ()
 e.aggregatedJaccard()
+e.mAD()
 e.aggregatedDice()
 
