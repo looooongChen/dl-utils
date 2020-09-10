@@ -515,57 +515,54 @@ class Evaluator(object):
 
 
 if __name__ == '__main__':
-    gt = np.zeros((10,10))
-    gt[:4,:4] = 1
-    gt[-4:,-4:] = 2
+    from skimage.io import imread
+    import time
+    import numpy as np
+    import glob
 
-    pred = gt.copy()
-    pred[:4,:2] = 3
-    # pred[-4:,:2] = 3
+    #### toy test ####
+    # gt = imread('./test/toy_example/gt.png')
+    # pred = imread('./test/toy_example/pred.png')
+    # sample = Sample(pred, gt)
+    # subject = 'pred'
+    # sample._computeMatch(subject=subject)
+    # print(sample.match_pd, sample.intersection_pd, sample.match_gt, sample.intersection_gt)
+    # sample._computePrecision(subject=subject)
+    # sample._computeRecall(subject=subject)
+    # sample._computeF1(subject=subject)
+    # sample._computeJaccard(subject=subject)
+    # sample._computeDice(subject=subject)
+    # print('precision', sample.precision_pd, sample.precision_gt)
+    # print('recall', sample.recall_pd, sample.recall_gt)
+    # print('f1', sample.f1_pd, sample.f1_gt)
+    # print('jaccard', sample.jaccard_pd, sample.jaccard_gt)
+    # print('dice', sample.dice_pd, sample.dice_gt)
+    # print('averagePrecision', sample.averageSegPrecision(subject))
+    # print('averageRecall', sample.averageSegRecall(subject))
+    # print('averageF1', sample.averageSegF1(subject))
+    # print('averageJaccard', sample.averageJaccard(subject))
+    # print('averageDice', sample.averageDice(subject))
+    # print('aggregatedJaccard', sample.aggregatedJaccard())
+    # print('aggregatedDice', sample.aggregatedDice())
+    # print('detectionPrecision', sample.detectionPrecision())
+    # print('AP', sample.AP())
 
-    print(gt)
-    print(pred)
 
-    # gt = map2stack(gt)
-    # pred = map2stack(pred)
 
-    s = Sample(pred, gt, dimension=2, mode='area', boundary_tolerance=3)
+    f_gts = sorted(glob.glob('./test/cell/gt/*.png'))[0:50]
+    f_preds = sorted(glob.glob('./test/cell/pred/*.tif'))[0:50]
 
-    # gt = np.zeros((10,10))
-    # gt[2,:] = 1
-
-    # pred = np.zeros((10,10))
-    # pred[5,:5] = 1
-
-    # print(gt)
-    # print(pred)
-
-    # s = Sample(pred, gt, dimension=2, mode='line', boundary_tolerance=4)
-
-    print('averagePrecision_pd', s.averagePrecision())
-    print('averagePrecision_gt', s.averagePrecision('gt'))
-    print('aggregatedPrecision_pd', s.aggregatedPrecision())
-    print('aggregatedPrecision_gt', s.aggregatedPrecision('gt'))
-    print('averageRecall_pd', s.averageRecall())
-    print('averageRecall_gt', s.averageRecall('gt'))
-    print('aggregatedRecall_pd', s.aggregatedRecall())
-    print('aggregatedRecall_gt', s.aggregatedRecall('gt'))
-    print('averageF1_pd', s.averageF1())
-    print('averageF1_gt', s.averageF1('gt'))
-    print('aggregatedF1_pd', s.aggregatedF1())
-    print('aggregatedF1_gt', s.aggregatedF1('gt'))
-
-    print('aggregatedJaccard: ', s.aggregatedJaccard())
-    print('aggregatedDice: ', s.aggregatedDice())
-    print('averageJaccard_pred: ', s.averagedJaccard('pred'))
-    print('averageJaccard_gt: ', s.averagedJaccard('gt'))
-    print('averageDice_pred: ', s.averagedDice('pred'))
-    print('averageDice_gt: ', s.averagedDice('gt'))
-    print('SBD: ', s.SBD())
-    print('match number', s.match_num(0.1, 'Jaccard'))
-
+    # evalation of a whole dataset
     e = Evaluator(dimension=2, mode='area')
-    e.add_example(pred, gt)
+    for f_gt, f_pred in zip(f_gts, f_preds):
+        pred = imread(f_pred)
+        gt = imread(f_gt)
+        # add one segmentation
+        e.add_example(pred, gt)
+
     e.mAP()
-# e.aggregatedJaccard()
-# e.aggregatedDice()
+    e.averagePrecision()
+    e.mAJ()
+    e.aggregatedJaccard()
+    e.mAD()
+    e.aggregatedDice()
