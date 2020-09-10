@@ -411,7 +411,7 @@ class GFG(object):
 
 class Evaluator(object):
 
-    def __init__(self, dimension=2, mode='area', boundary_tolerance=3):
+    def __init__(self, dimension=2, mode='area', boundary_tolerance=3, verbose=True):
 
         self.dimension = dimension
         self.mode = mode
@@ -420,6 +420,8 @@ class Evaluator(object):
         self.examples = []
         self.total_pd = 0
         self.total_gt = 0
+
+        self.verbose = verbose
         
 
     def add_example(self, pred, gt):
@@ -427,7 +429,8 @@ class Evaluator(object):
         self.examples.append(e)
         self.total_pd += e.num_pd
         self.total_gt += e.num_gt
-        print("example added, total: ", len(self.examples))
+        if self.verbose:
+            print("example added, total: ", len(self.examples))
 
     def mAP(self, thres=None, metric='Jaccard'):
 
@@ -439,7 +442,8 @@ class Evaluator(object):
         thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] if thres is None else thres
         APs = [e.AP(thres=thres, metric=metric) for e in self.examples]
         mAP = np.mean(APs)
-        print('mAP (mean average precision): ', mAP)
+        if self.verbose:
+            print('mAP (mean average precision): ', mAP)
         return mAP
 
     def averagePrecision(self, thres=None, metric='Jaccard'):
@@ -461,7 +465,8 @@ class Evaluator(object):
 
             Ps.append(match_count_gt/(self.total_gt + self.total_pd - match_count_pd))
         AP = np.mean(Ps)
-        print('AP (average precision) over the whole dataset: ', AP)
+        if self.verbose:
+            print('AP (average precision) over the whole dataset: ', AP)
         return AP
 
     def mAJ(self):
@@ -470,7 +475,8 @@ class Evaluator(object):
         '''
         AJs = [e.aggregatedJaccard() for e in self.examples]
         mAJ = np.mean(AJs)
-        print('mAJ (mean aggregated Jaccard): ', mAJ)
+        if self.verbose:
+            print('mAJ (mean aggregated Jaccard): ', mAJ)
         return mAJ    
     
     def aggregatedJaccard(self):
@@ -483,8 +489,8 @@ class Evaluator(object):
             agg_i, agg_u, _ = e.accumulate_area()
             agg_intersection += agg_i
             agg_union += agg_u
-        
-        print('aggregated Jaccard: ', agg_intersection/agg_union)
+        if self.verbose:
+            print('aggregated Jaccard: ', agg_intersection/agg_union)
 
         return agg_intersection/agg_union
     
@@ -508,8 +514,8 @@ class Evaluator(object):
             agg_i, _, agg_a = e.accumulate_area()
             agg_intersection += agg_i
             agg_area += agg_a
-        
-        print('aggregated Dice: ', 2*agg_intersection/agg_area)
+        if self.verbose:
+            print('aggregated Dice: ', 2*agg_intersection/agg_area)
 
         return 2*agg_intersection/agg_area
 
