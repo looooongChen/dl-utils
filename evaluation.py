@@ -388,7 +388,10 @@ class Sample(object):
             raise Exception("aggregatedJaccard is not a valid score in 'centroid' mode")
 
         agg_intersection, agg_union, _ = self.accumulate_area()
-        return agg_intersection/agg_union
+        if agg_intersection == 0 and agg_union == 0:
+            return 1
+        else:
+            return agg_intersection/agg_union
 
 
     def aggregatedDice(self):
@@ -402,7 +405,10 @@ class Sample(object):
             raise Exception("aggregatedDice is not a valid score in 'centroid' mode")
 
         agg_intersection, _, agg_area = self.accumulate_area()
-        return 2*agg_intersection/agg_area
+        if agg_intersection == 0 and agg_union == 0:
+            return 1
+        else:
+            return 2*agg_intersection/agg_area
 
 
     def SBD(self):
