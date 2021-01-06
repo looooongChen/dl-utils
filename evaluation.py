@@ -694,6 +694,19 @@ class Evaluator(object):
 
         return 2*agg_intersection/agg_area
 
+    def mSBD(self):
+        '''
+        mean symmetric best dice
+        '''
+
+        if self.mode == 'centroid':
+            raise Exception("mSBD is not a valid score in 'centroid' mode")
+
+        SBDs = [e.SBD() for e in self.examples]
+        mSBD = np.mean(SBDs)
+        print('mSBD (mean symmetric best dice): ', mSBD)
+        return mSBD 
+
 
 if __name__ == '__main__':
     from skimage.io import imread
