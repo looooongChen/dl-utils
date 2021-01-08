@@ -292,7 +292,7 @@ class UNnetDilate(UNnet):
         self.dilation_rate = dilation_rate
         
         for i in range(dilation_rate):
-            self.L['conv_dilation{:d}'.format(i)] = Conv2D(filters, 3, 1, dilation_rate=2**(i+1), padding=PAD, kernel_initializer=INIT)
+            self.L['conv_dilation{:d}'.format(i)] = Conv2D(filters//dilation_rate, 3, 1, dilation_rate=2**(i+1), padding=PAD, kernel_initializer=INIT)
         self.concat_dilation = Concatenate(axis=-1)
         self.conv_dilate = Conv2D(filters, 3, 1, padding=PAD, kernel_initializer=INIT)
 
