@@ -128,7 +128,7 @@ class UNnetSA(tf.keras.Model):
                  batch_norm=False,
                  upsample='interp', # 'interp', 'conv'
                  merge='cat', # 'add', 'cat'
-                 name='UNet',
+                 name='UNetSA',
                  **kwargs):
 
         super().__init__(name=name, **kwargs)
@@ -236,7 +236,7 @@ class UNnetSA(tf.keras.Model):
         
         return outputs
 
-class UNnetDilate(UNnet):
+class UNnetD(UNnet):
     
     def __init__(self,
                  D=4,
@@ -245,8 +245,8 @@ class UNnetDilate(UNnet):
                  batch_norm=False,
                  upsample='interp', # 'interp', 'conv'
                  merge='cat', # 'add', 'cat'
-                 name='UNetDilate',
-                 dilation_rate=4,
+                 name='UNetD',
+                 dilation_rate=6,
                  **kwargs):
 
         super().__init__(D=D,
@@ -259,18 +259,23 @@ class UNnetDilate(UNnet):
         self.dilation_rate = dilation_rate
         
         for i in range(dilation_rate):
-            self.L['conv_dilation{:d}'.format(i)] = Conv2D(filters//dilation_rate, 3, 1, dilation_rate=2**(i+1), padding=PAD, kernel_initializer=INIT)
-        self.concat_dilation = Concatenate(axis=-1)
-        self.conv_dilate = Conv2D(filters, 3, 1, padding=PAD, kernel_initializer=INIT)
+            self.L['dilation{:d}_conv'.format(i)] = Conv2D(filters//4, 3, 1, dilation_rate=2**i, padding=PAD, kernel_initializer=INIT)
+            if self.batch_norm:
+                self.L['dilation{:d}_batchnorm'.format(i)] = BatchNormalization()
+        self.L['dilation_cat'] = Concatenate(axis=-1)
+        self.L['dilation_relu'] = ReLU()
 
     def call(self, inputs):
-        outs = super().call(inputs)
-        dilated = [outs]
+        output = super().call(inputs)
+        features = []
         for i in range(self.dilation_rate):
-            dilated.append(self.L['conv_dilation{:d}'.format(i)](outs))
-        outs = self.concat_dilation(dilated)
-        outs = self.conv_dilate(outs)
-        return outs
+            feature = self.L['dilation{:d}_conv'.format(i)](output)
+            if self.batch_norm:
+                feature = self.L['dilation{:d}_batchnorm'.format(i)](feature)
+            features.append(feature)
+        features = self.L['dilation_cat'](features)
+        features = self.L['dilation_relu'](features)
+        return features
 
 # class UNnetAtten(tf.keras.Model):
 
@@ -432,7 +437,7 @@ if __name__ == "__main__":
     import os
 
     # model = UNnet(D=3, filters=32, dropout_rate=0.5, batch_norm=True, upsample='interp', merge='cat')
-    model = UNnetSA(D=3, filters=32, dropout_rate=0.5, batch_norm=True, upsample='interp', merge='cat')
+    model = UNnetD(D=3, filters=32, dropout_rate=0.5, batch_norm=True, upsample='interp', merge='cat')
     # model.build(input_shape=(1,512,512,1))
     # model.summary()
 
