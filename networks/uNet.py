@@ -9,7 +9,7 @@ U-Net: Convolutional Networks for Biomedical Image Segmentation
 INIT = 'he_normal' # 'glorot_uniform'
 PAD = 'same' # 'valid'
 
-class UNnet(tf.keras.Model):
+class UNet(tf.keras.Model):
 
     def __init__(self,
                D=4,
@@ -119,7 +119,7 @@ class UNnet(tf.keras.Model):
 
 
 # unet with spatial attention
-class UNnetSA(tf.keras.Model):
+class UNetSA(tf.keras.Model):
 
     def __init__(self,
                  D=4,
@@ -236,7 +236,7 @@ class UNnetSA(tf.keras.Model):
         
         return outputs
 
-class UNnetD(UNnet):
+class UNetD(UNnet):
     
     def __init__(self,
                  D=4,
