@@ -1,6 +1,7 @@
 from skimage.color import label2rgb
 from skimage.morphology import dilation, erosion
 from skimage.color import rgb_colors as colors
+from skimage.measure import label
 from skimage.measure import regionprops
 import numpy as np
 
@@ -19,11 +20,18 @@ def get_color_by_name(color_name):
     color = getattr(colors, color_name)
     return np.array(color) * 255
 
-
-def vis_instance_area(img, instance, colors=None):
+def vis_semantic_area(img, semantic, colors=None, bg_label=0):
     img = shape(img)
-    vis = label2rgb(instance, image=img, colors=colors, bg_label=0)
-    return (vis*255).astype(np.uint8)
+    vis = label2rgb(semantic, colors=colors, bg_label=bg_label) * 255
+    vis = img * 0.7 + vis * 0.3
+    return vis.astype(np.uint8)
+
+def vis_instance_area(img, instance, colors=None, bg_label=0):
+    img = shape(img)
+    instance = label(instance)
+    vis = label2rgb(instance, colors=colors, bg_label=bg_label) * 255
+    vis = img * 0.7 + vis * 0.3
+    return vis.astype(np.uint8)
 
 def vis_instance_contour(img, instance, color=None):
     img = shape(img)
