@@ -20,7 +20,7 @@ def split2D(image, patch_sz, overlap, patch_in_ram=True, save_dir=None):
     '''
     assert patch_in_ram == True or save_dir is not None
 
-    if not os.path.exists(save_dir):
+    if save_dir is not None and not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     img_sz = image.shape
