@@ -1,6 +1,5 @@
 import pyclipper
 import cv2
-from mask_contour import *
 import numpy as np
 
 def mask2contour(mask):
