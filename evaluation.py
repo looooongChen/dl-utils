@@ -67,8 +67,6 @@ class Sample(object):
         self.mode = mode
         self.tolerance = tolerance
         # self.is_label_map = (pd.ndim == dimension)
-        self.matched_gt = False
-        self.matched_pd = False
 
         if pd.ndim == dimension:
             self.gt, self.pd = gt.astype(np.uint16), pd.astype(np.uint16)
@@ -107,21 +105,23 @@ class Sample(object):
         self.agg_union = None
         self.agg_area = None
         # match count, computed with respect to ground truth (which makes sense)
-        self.match_count_gt = {}
-        self.match_count_pd = {}
+        self.gt_match_count = {}
+        self.pd_match_count = {}
     
 
-    def _computeMatch(self, subject='pred'):
+    def _match(self, subject='pred'):
         '''
+        find the best match of each instance in prediction / ground truth
         Args:
             subject: 'pred' or 'gt'
+        Return:
+            match: dict of the best match
+            intersection: dict of the intersection area
         '''
-        if subject == 'pred' and self.matched_pd is False:
+        if subject == 'pred' and self.match_pd is None:
             sub, ref = self.pd, self.gt
-            self.matched_pd = True
-        elif subject == 'gt' and self.matched_gt is False:
+        elif subject == 'gt' and self.match_gt is None:
             sub, ref = self.gt, self.pd
-            self.matched_gt = True
         else:
             return None
         
@@ -203,36 +203,44 @@ class Sample(object):
             self.match_gt, self.intersection_gt = match, intersection
     
 
-    def _computePrecision(self, subject='pred'):
+    def _getSegPrecision(self, subject='pred'):
 
+        '''
+        compute the segmentation precision of each 'subject' object
+        '''
         if subject == 'pred' and self.precision_pd is None:    
-            self._computeMatch('pred')
+            self._match('pred')
             self.precision_pd = {k: self.intersection_pd[k] / self.area_pd[k] for k in self.match_pd.keys()}
 
         if subject == 'gt' and self.precision_gt is None:    
-            self._computeMatch('gt')
+            self._match('gt')
             self.precision_gt = {k: self.intersection_gt[k] / self.area_gt[k] for k in self.match_gt.keys()}
 
 
-    def _computeRecall(self, subject='pred'):
+    def _getSegRecall(self, subject='pred'):
 
+        '''
+        compute the segmentation recall of each 'subject' object
+        '''
         if subject == 'pred' and self.recall_pd is None:    
-            self._computeMatch('pred')
+            self._match('pred')
             self.recall_pd = {}
             for k, m in self.match_pd.items():
                 self.recall_pd[k] = self.intersection_pd[k] / self.area_gt[m] if m is not None else 0
 
         if subject == 'gt' and self.recall_gt is None:    
-            self._computeMatch('gt')
+            self._match('gt')
             self.recall_gt = {}
             for k, m in self.match_gt.items():
                 self.recall_gt[k] = self.intersection_gt[k] / self.area_pd[m] if m is not None else 0
 
 
-    def _computeF1(self, subject='pred'):
-
-        self._computePrecision(subject)
-        self._computeRecall(subject)
+    def _getSegF1(self, subject='pred'):
+        '''
+        compute the segmentation f1 score of each 'subject' object
+        '''
+        self._getSegPrecision(subject)
+        self._getSegRecall(subject)
 
         if subject == 'pred' and self.f1_pd is None:
             self.f1_pd = {}
@@ -245,9 +253,12 @@ class Sample(object):
                 self.f1_gt[k] = 2*(p*self.recall_gt[k])/(p + self.recall_gt[k] + 1e-8)
     
 
-    def _computeJaccard(self, subject='pred'):
-        
-        self._computeMatch(subject)
+    def _getSegJaccard(self, subject='pred'):
+
+        '''
+        compute the segmentation Jaccard index of each 'subject' object
+        '''
+        self._match(subject)
         
         if subject == 'pred' and self.jaccard_pd is None:
             match, intersection = self.match_pd, self.intersection_pd
@@ -271,9 +282,12 @@ class Sample(object):
             self.jaccard_gt = jaccard
 
 
-    def _computeDice(self, subject='pred'):
-
-        self._computeMatch(subject)
+    def _getSegDice(self, subject='pred'):
+        
+        '''
+        compute the segmentation Dice index of each 'subject' object
+        '''
+        self._match(subject)
 
         if subject == 'pred' and self.dice_pd is None:
             match, intersection = self.match_pd, self.intersection_pd
@@ -297,10 +311,13 @@ class Sample(object):
 
     def averageSegPrecision(self, subject='pred'):
 
+        '''
+        average of the segmentation precision of each 'subject' object
+        '''
         if self.mode == 'centroid':
             raise Exception("averageSegPrecision is not a valid score in 'centroid' mode")
 
-        self._computePrecision(subject)
+        self._getSegPrecision(subject)
         if subject == 'pred':
             return np.mean(list(self.precision_pd.values()))
         else:
@@ -309,10 +326,13 @@ class Sample(object):
 
     def averageSegRecall(self, subject='pred'):
 
+        '''
+        average of the segmentation recall of each 'subject' object
+        '''
         if self.mode == 'centroid':
             raise Exception("averageSegRecall is not a valid score in 'centroid' mode")
         
-        self._computeRecall(subject)
+        self._getSegRecall(subject)
         if subject == 'pred':
             return np.mean(list(self.recall_pd.values()))
         else:
@@ -320,11 +340,13 @@ class Sample(object):
              
 
     def averageSegF1(self, subject='pred'):
-
+        '''
+        average of the segmentation F1 score of each 'subject' object
+        '''
         if self.mode == 'centroid':
             raise Exception("averageSegF1 is not a valid score in 'centroid' mode")
         
-        self._computeF1(subject)
+        self._getSegF1(subject)
         if subject == 'pred':
             return np.mean(list(self.f1_pd.values()))
         else:
@@ -332,11 +354,13 @@ class Sample(object):
         
 
     def averageJaccard(self, subject='pred'):
-
+        '''
+        average of the segmentation Jaccard index of each 'subject' object
+        '''
         if self.mode == 'centroid':
             raise Exception("averageJaccard is not a valid score in 'centroid' mode")
     
-        self._computeJaccard(subject)
+        self._getSegJaccard(subject)
         if subject == 'pred':
             return np.mean(list(self.jaccard_pd.values()))
         else:
@@ -344,22 +368,27 @@ class Sample(object):
 
 
     def averageDice(self, subject='pred'):
-
+        '''
+        average of the segmentation dice of each 'subject' object
+        '''
         if self.mode == 'centroid':
             raise Exception("averageDice is not a valid score in 'centroid' mode")
 
-        self._computeDice(subject)
+        self._getSegDice(subject)
         if subject == 'pred':
             return np.mean(list(self.dice_pd.values()))
         else:
             return np.mean(list(self.dice_gt.values()))
-    
+
 
     def accumulate_area(self):
-
+        '''  
+        Reference:
+            A Dataset and a Technique for Generalized Nuclear Segmentation for Computational Pathology
+        '''
         if self.agg_intersection is None or self.agg_area is None or self.agg_union is None:
             self.agg_intersection, self.agg_union, self.agg_area = 0, 0, 0
-            self._computeMatch('gt')
+            self._match('gt')
             matched_pd = []
             for k, m in self.match_gt.items():
                 self.agg_intersection += self.intersection_gt[k]
@@ -392,6 +421,9 @@ class Sample(object):
             return 1
         else:
             return agg_intersection/agg_union
+    
+    def AJI(self): # alias of aggregatedJaccard (aggregated Jaccard index)
+        return self.aggregatedJaccard()
 
 
     def aggregatedDice(self):
@@ -409,83 +441,125 @@ class Sample(object):
             return 1
         else:
             return 2*agg_intersection/agg_area
+    
+    def ADS(self): # alias of aggregatedDice (aggregated Dice score)
+        return self.aggregatedJaccard()
 
 
     def SBD(self):
-
+        '''
+        symmetric best dice
+        '''
         if self.mode == 'centroid':
             raise Exception("SBD is not a valid score in 'centroid' mode")
         return min(self.averagedDice('pred'), self.averagedDice('gt'))
 
 
-    def match_num(self, thres, metric='Jaccard'):
+    def match_num(self, thres, metric='Jaccard', subject='gt'):
         '''
         Args:
             thres: threshold to determine the a match
-            metric: metric used to determine match
+            metric: metric used to determine match, 'Jaccard' or 'Dice'
         Retrun:
             match_count, gt_count: the number of matches, the number of matched gt objects
         '''
-        if thres not in self.match_count_gt.keys() or thres not in self.match_count_pd.keys():
-            match_count = 0
-            match_pd = []
+        match_count = self.gt_match_count if subject == 'gt' else self.pd_match_count
+        self._match(subject)
+        match = self.match_gt if subject == 'gt' else self.match_pd
+
+        if thres not in match_count.keys():
+            count, count_c = 0, []
             if self.mode == 'centroid':
-                self._computeMatch('gt')
-                for sub, ref in self.match_gt.items():
+                for sub, ref in match.items():
                     if ref is not None:
-                        match_count += 1
-                        match_pd.append(ref)
+                        count += 1
+                        count_c.append(ref)
             else:
                 if metric.lower() == 'f1':
-                    self._computeF1('gt')
-                    score = self.f1_gt 
+                    self._getSegF1(subject)
+                    score = self.f1_gt if subject == 'gt' else self.f1_pd
                 elif metric.lower() == 'jaccard':
-                    self._computeJaccard('gt')
-                    score = self.jaccard_gt
+                    self._getSegJaccard(subject)
+                    score = self.jaccard_gt if subject == 'gt' else self.jaccard_pd
                 elif metric.lower() == 'dice':
-                    self._computeDice('gt')
-                    score = self.dice_gt
+                    self._getSegDice(subject)
+                    score = self.dice_gt if subject == 'gt' else self.dice_pd
                 for k, s in score.items():
                     if s >= thres:
-                        match_count += 1
-                        match_pd.append(self.match_gt[k])
-            self.match_count_gt[thres] = match_count
-            self.match_count_pd[thres] = len(np.unique(match_pd))
+                        count += 1
+                        count_c.append(match[k])
+            match_count[thres] = [count, len(np.unique(count_c))] 
+            if subject == 'gt':
+                self.gt_match_count = match_count
+            else: 
+                self.pd_match_count = match_count
 
-        return self.match_count_gt[thres], self.match_count_pd[thres]
+        return match_count[thres]
 
-    def detectionSensitivity(self, thres=0.5, metric='Jaccard'):
-        match_count_gt, _ = self.match_num(thres=thres, metric=metric)
-        # it is possible that gt, pred are both empty
-        S = match_count_gt/self.num_gt if self.num_gt > 0 else 1
+
+    def detectionRecall(self, thres=0.5, metric='Jaccard'):
+        pd_match_gt_count = self.match_num(thres=thres, metric=metric, subject='pred')[1]
+        # it is possible that gt, pred are both empty (empty image)
+        S = pd_match_gt_count/self.num_gt if self.num_gt > 0 else 1
         return S
 
-    def detectionAccuracy(self, thres=0.5, metric='Jaccard'):
-        match_count_gt, _ = self.match_num(thres=thres, metric=metric)
+
+    def detectionPrecision(self, thres=0.5, metric='Jaccard'):
+        pd_match_pd_count = self.match_num(thres=thres, metric=metric, subject='gt')[0]
         # it is possible that gt, pred are both empty
-        A = match_count_gt/self.num_pd if self.num_pd > 0 else 1
+        A = pd_match_pd_count/self.num_pd if self.num_pd > 0 else 1
         return A
 
-    def P(self, thres=0.5, metric='Jaccard'):
 
-        match_count_gt, _ = self.match_num(thres=thres, metric=metric)
-        union = self.num_gt + self.num_pd - match_count_gt
+    def AP_COCO(self, thres=None, metric='Jaccard', interpolated=True):
+        '''
+        average precision based on MS COCO definition: https://cocodataset.org/#home
+        in case of objects of the same class, AP == mAP in COCO definition
+        '''
+        if self.mode == 'centroid':
+            raise Exception("AP_COCO does not make sense in the 'centroid' mode")
+        else:
+            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
+            dps = [self.detectionPrecision(thres=t, metric=metric) for t in thres]
+            if interpolated:
+                dps = [max(dps[i:-1]) for i in range(len(dps)-1)] + [dps[-1]]
+            return np.mean(dps)
+
+    def AFNR(self, thres=None, metric='Jaccard'):
+        '''
+        average false-negative ratio, ref.:
+            Edlund, C., Jackson, T.R., Khalid, N. et al. LIVECell—A large-scale dataset for label-free live cell segmentation. Nat Methods (2021). https://doi.org/10.1038/s41592-021-01249-6
+        '''
+        if self.mode == 'centroid':
+            raise Exception("AP_COCO does not make sense in the 'centroid' mode")
+        else:
+            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
+            fnr = [1 - self.detectionRecall(thres=t, metric=metric) for t in thres]
+            return np.mean(fnr)
+
+    def P_DSB(self, thres=0.5, metric='Jaccard'):
+        '''
+        the precision based on Data Scient Bowl 2018 definition: https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        '''
+        gt_match_count = self.match_num(thres=thres, metric=metric, subject='gt')
+        union = self.num_gt + self.num_pd - gt_match_count[1]
         # it is possible that gt, pred are both empty
-        P = match_count_gt/union if union > 0 else 1
+        P = gt_match_count[0]/union if union > 0 else 1
         return P
 
 
-    def AP(self, thres=None, metric='Jaccard'):
+    def AP_DSB(self, thres=None, metric='Jaccard', interpolated=False):
         '''
-        Reference about P, AP, mAP:
-            https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        average precision based on Data Scient Bowl 2018 definition: https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
         '''
         if self.mode == 'centroid':
-            return self.P()
+            return self.P_DSB()
         else:
             thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
-            Ps = [self.P(thres=t, metric=metric) for t in thres]
-            return np.mean(Ps)
+            ps = [self.P_DSB(thres=t, metric=metric) for t in thres]
+            if interpolated:
+                ps = [max(ps[i:-1]) for i in range(len(ps)-1)] + [ps[-1]]
+            return np.mean(ps)
 
 
 class GFG(object):   
@@ -556,80 +630,12 @@ class Evaluator(object):
         if self.verbose:
             print("example added, total: ", len(self.examples))
 
-    def detectionSensitivity(self, thres=0.5, metric='Jaccard'):
 
-        match_count, num_gt = 0, 0
-        for e in self.examples:
-            match_count_gt, _ = e.match_num(thres=thres, metric=metric)
-            match_count += match_count_gt
-            num_gt += e.num_gt
-        S = match_count/num_gt if num_gt > 0 else 1
-        if self.verbose:
-            print("detectionSensitivity over the whole dataset under '" + metric + "' {}: {}".format(thres, S))
-        return S
-
-    def detectionAccuracy(self, thres=0.5, metric='Jaccard'):
-
-        match_count, num_pd = 0, 0
-        for e in self.examples:
-            match_count_gt, _ = e.match_num(thres=thres, metric=metric)
-            match_count += match_count_gt
-            num_pd += e.num_pd
-        A = match_count/num_pd if num_pd > 0 else 1
-        if self.verbose:
-            print("detectionAccuracy over the whole dataset under '" + metric + "' {}: {}".format(thres, A))
-        return A
-
-    def P(self, thres=0.5, metric='Jaccard'):
-
-        match_count, num_pd, num_gt = 0, 0, 0
-        for e in self.examples:
-            match_count_gt, _ = e.match_num(thres=thres, metric=metric)
-            match_count += match_count_gt
-            num_pd += e.num_pd
-            num_gt += e.num_gt
-        union = num_gt + num_pd - match_count
-        # it is possible that gt, pred are both empty
-        P = match_count/union if union > 0 else 1
-        if self.verbose:
-            print("P (detection precision) over the whole dataset under '" + metric + "' {}: {}".format(thres, P))
-        return P
-
-    def AP(self, thres=None, metric='Jaccard'):
-        if self.mode == 'centroid':
-            AP = self.P()
-        else:
-            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
-            Ps = [self.P(thres=t, metric=metric) for t in thres]
-            AP = np.mean(Ps)
-        if self.verbose:
-            print('AP (average detection precision) over the whole dataset: ', AP)
-        return AP
-
-    def mAP(self, thres=None, metric='Jaccard'):
-
+    def meanAggregatedJaccard(self):
         '''
-        mean AP over images
-        Reference about P, AP, mAP:
-            https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        aggregatedJaccard: accumulate area over images first, then compute the AJI
+        meanAggregatedJaccard: compute AJI of each image, and then take the average
         '''
-        if self.mode == 'centroid':
-            APs = [e.AP() for e in self.examples]
-        else:
-            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] if thres is None else thres
-            APs = [e.AP(thres=thres, metric=metric) for e in self.examples]
-        
-        mAP = np.mean(APs)
-        if self.verbose:
-            print('mAP (mean average precision): ', mAP)
-        return mAP
-
-
-    def mAJ(self):
-        '''
-        mean aggregated Jaccard
-        '''
-
         if self.mode == 'centroid':
             raise Exception("mAJ is not a valid score in 'centroid' mode")
 
@@ -639,13 +645,16 @@ class Evaluator(object):
             print('mAJ (mean aggregated Jaccard): ', mAJ)
         return mAJ    
     
+    def mAJI(self):
+        return self.meanAggregatedJaccard()
 
     def aggregatedJaccard(self):
-        '''  
+        ''' 
+        aggregatedJaccard: accumulate area over images first, then compute the AJI
+        meanAggregatedJaccard: compute AJI of each image, and then take the average
         Reference:
             A Dataset and a Technique for Generalized Nuclear Segmentation for Computational Pathology
         '''
-
         if self.mode == 'centroid':
             raise Exception("aggregatedJaccard is not a valid score in 'centroid' mode")
 
@@ -658,13 +667,16 @@ class Evaluator(object):
             print('aggregated Jaccard: ', agg_intersection/agg_union)
 
         return agg_intersection/agg_union
+
+    def AJI(self):
+        return self.aggregatedJaccard()
     
 
-    def mAD(self):
+    def meanAggregatedDice(self):
         '''
-        mean aggregated Dice
+        aggregatedDice: accumulate area over images first, then compute the ADS
+        meanAggregatedDice: compute ADS of each image, and then take the average
         '''
-
         if self.mode == 'centroid':
             raise Exception("mAD is not a valid score in 'centroid' mode")
 
@@ -673,14 +685,17 @@ class Evaluator(object):
         print('mAD (mean aggregated Dice): ', mAD)
         return mAD 
 
+    def mADS(self):
+        return self.meanAggregatedDice()
 
     def aggregatedDice(self):
         ''' 
-        no defination found, derived from aggrated Jaccard Index
+        no defination found, derived from aggregated Jaccard Index
         Reference:
             CNN-BASED PREPROCESSING TO OPTIMIZE WATERSHED-BASED CELL SEGMENTATION IN 3D CONFOCAL MICROSCOPY IMAGES
+        aggregatedDice: accumulate area over images first, then compute the ADS
+        meanAggregatedDice: compute ADS of each image, and then take the average
         '''
-
         if self.mode == 'centroid':
             raise Exception("aggregatedDice is not a valid score in 'centroid' mode")
 
@@ -694,9 +709,13 @@ class Evaluator(object):
 
         return 2*agg_intersection/agg_area
 
+    def ADS(self):
+        return self.aggregatedDice()
+
+
     def mSBD(self):
         '''
-        mean symmetric best dice
+        mean of SBD (symmetric best dice) of each image
         '''
 
         if self.mode == 'centroid':
@@ -706,6 +725,106 @@ class Evaluator(object):
         mSBD = np.mean(SBDs)
         print('mSBD (mean symmetric best dice): ', mSBD)
         return mSBD 
+
+    
+
+    def detectionRecall(self, thres=0.5, metric='Jaccard'):
+
+        match_count, num_gt = 0, 0
+        for e in self.examples:
+            pd_match_gt_count = e.match_num(thres=thres, metric=metric, subject='pred')[1]
+            match_count += pd_match_gt_count
+            num_gt += e.num_gt
+        S = match_count/num_gt if num_gt > 0 else 1
+        if self.verbose:
+            print("detectionRecall over the whole dataset under '" + metric + "' {}: {}".format(thres, S))
+        return S
+
+    def detectionPrecision(self, thres=0.5, metric='Jaccard'):
+
+        match_count, num_pd = 0, 0
+        for e in self.examples:
+            pd_match_pd_count = e.match_num(thres=thres, metric=metric, subject='pred')[0]
+            match_count += pd_match_pd_count
+            num_pd += e.num_pd
+        A = match_count/num_pd if num_pd > 0 else 1
+        if self.verbose:
+            print("detectionPrecision over the whole dataset under '" + metric + "' {}: {}".format(thres, A))
+        return A
+
+
+    def P_DSB(self, thres=0.5, metric='Jaccard'):
+        '''
+        the precision based on Data Scient Bowl 2018 definition: https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        '''
+
+        match_count_gt, match_count_pd, num_pd, num_gt = 0, 0, 0, 0
+        for e in self.examples:
+            match_count = e.match_num(thres=thres, metric=metric, subject='gt')
+            match_count_gt += match_count[0]
+            match_count_pd += match_count[1]
+            num_pd += e.num_pd
+            num_gt += e.num_gt
+        union = num_gt + num_pd - match_count_pd
+        # it is possible that gt, pred are both empty
+        P = match_count_gt/union if union > 0 else 1
+        if self.verbose:
+            print("P (Data Scient Bowl 2018) over the whole dataset under '" + metric + "' {}: {}".format(thres, P))
+        return P
+
+    def AP_DSB(self, thres=None, metric='Jaccard', interpolated=False):
+        '''
+        average precision based on Data Scient Bowl 2018 definition: https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation
+        '''
+        if self.mode == 'centroid':
+            AP = self.P_DSB()
+        else:
+            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
+            ps = [self.P_DSB(thres=t, metric=metric) for t in thres]
+            if interpolated:
+                ps = [max(ps[i:-1]) for i in range(len(ps)-1)] + [ps[-1]]
+            AP = np.mean(ps)
+        if self.verbose:
+            print('AP (Data Scient Bowl 2018) over the whole dataset: ', AP)
+        return AP
+
+
+    def AP_COCO(self, thres=None, metric='Jaccard', interpolated=True):
+        '''
+        average precision based on MS COCO definition: https://cocodataset.org/#home
+        in case of objects of the same class, AP == mAP in COCO definition
+        '''
+        if self.mode == 'centroid':
+            raise Exception("AP_COCO does not make sense in the 'centroid' mode")
+        else:
+            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
+            dps = [self.detectionPrecision(thres=t, metric=metric) for t in thres]
+            if interpolated:
+                dps = [max(dps[i:-1]) for i in range(len(dps)-1)] + [dps[-1]]
+            AP = np.mean(dps)
+        if self.verbose:
+            print('AP (MS COCO) over the whole dataset: ', AP)
+        return AP
+
+
+    def AFNR(self, thres=None, metric='Jaccard'):
+        '''
+        average false-negative ratio, ref.:
+            Edlund, C., Jackson, T.R., Khalid, N. et al. LIVECell—A large-scale dataset for label-free live cell segmentation. Nat Methods (2021). https://doi.org/10.1038/s41592-021-01249-6
+        '''
+        if self.mode == 'centroid':
+            raise Exception("AP_COCO does not make sense in the 'centroid' mode")
+        else:
+            thres = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] if thres is None else thres
+            fnr = [1 - self.detectionRecall(thres=t, metric=metric) for t in thres]
+            AFNR = np.mean(fnr)
+        if self.verbose:
+            print('AFNR (average false-negative ratio) over the whole dataset: ', AFNR)
+        return AFNR
+
+
+
+    
 
 
 if __name__ == '__main__':
@@ -719,8 +838,8 @@ if __name__ == '__main__':
     # pred = imread('./test/toy_example/pred.png')
     # sample = Sample(pred, gt, mode='area')
     # subject = 'gt'
-    # sample._computeMatch(subject=subject)
-    # print(sample.match_pd, sample.intersection_pd, sample.match_gt, sample.intersection_gt)
+    # sample._match(subject=subject)
+    # # print(sample.match_pd, sample.intersection_pd, sample.match_gt, sample.intersection_gt)
     # print('averageSegPrecision', sample.averageSegPrecision(subject))
     # print('averageSegRecall', sample.averageSegRecall(subject))
     # print('averageSegF1', sample.averageSegF1(subject))
@@ -728,8 +847,9 @@ if __name__ == '__main__':
     # print('averageDice', sample.averageDice(subject))
     # print('aggregatedJaccard', sample.aggregatedJaccard())
     # print('aggregatedDice', sample.aggregatedDice())
-    # print('P', sample.P())
-    # print('AP', sample.AP())
+    # print('COCO AP', sample.AP_COCO())
+    # print('average false negative ratio', sample.AFNR())
+    # print('DSB AP', sample.AP_DSB())
 
 
 
@@ -737,16 +857,17 @@ if __name__ == '__main__':
     f_preds = sorted(glob.glob('./test/cell/pred/*.tif'))[0:50]
 
     # evalation of a whole dataset
-    e = Evaluator(dimension=2, mode='centroid')
+    e = Evaluator(dimension=2, mode='area')
     for f_gt, f_pred in zip(f_gts, f_preds):
         pred = imread(f_pred)
         gt = imread(f_gt)
         # add one segmentation
         e.add_example(pred, gt)
 
-    e.mP()
-    e.mAP()
-    e.mAJ()
-    e.aggregatedJaccard()
-    e.mAD()
-    e.aggregatedDice()
+    e.detectionRecall()
+    e.detectionPrecision()
+    e.AP_COCO()
+    e.AP_DSB()
+    e.AFNR()
+    e.AJI()
+    e.ADS()
